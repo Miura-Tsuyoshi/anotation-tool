@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/anotation-tool/static/css/main.e6c13ad2.css",
+    "main.js": "/anotation-tool/static/js/main.27fb8753.js",
+    "static/js/787.ba20d2a4.chunk.js": "/anotation-tool/static/js/787.ba20d2a4.chunk.js",
+    "index.html": "/anotation-tool/index.html",
+    "main.e6c13ad2.css.map": "/anotation-tool/static/css/main.e6c13ad2.css.map",
+    "main.27fb8753.js.map": "/anotation-tool/static/js/main.27fb8753.js.map",
+    "787.ba20d2a4.chunk.js.map": "/anotation-tool/static/js/787.ba20d2a4.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.e6c13ad2.css",
+    "static/js/main.27fb8753.js"
+  ]
+}
