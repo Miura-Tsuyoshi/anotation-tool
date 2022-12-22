@@ -106,7 +106,7 @@ function App() {
     const urls: string[] = [...imgPaths]
     const names: string[] = [...inputFileNames]
     Promise.all(Array.from(Array(e.target.files.length).keys()).map(async (i: number) => {
-      return detectObjctApi("http://localhost:8000/api/detect/", e.target.files[i])
+      return detectObjctApi(apiurl, e.target.files[i])
     })).then((result: any[][]) => {
       console.log(result)
       const newObjs = result.map((objs) => objs.map((obj): Point[] => {

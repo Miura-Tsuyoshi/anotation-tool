@@ -23,5 +23,5 @@ const fetchHandler = async (url: string, body?: any) => {
 export const detectObjctApi = async (url: string, imageData: any) => {
     const formdata = new FormData()
     formdata.append('file', imageData)
-    return await fetchHandler(url, formdata)
+    return await fetchHandler(`${url}/api/detect`, formdata)
 }
