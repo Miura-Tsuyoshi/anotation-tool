@@ -2,50 +2,67 @@ import { validateHeaderName } from 'http';
 import { url } from 'inspector';
 import JSZip from 'jszip';
 import React, { useState, useEffect, ChangeEvent, useRef } from 'react';
+import { resourceLimits } from 'worker_threads';
+import { detectObjctApi } from './apis/apiActions';
 import './App.css';
 import CustomImageInput from './atoms/customImageInput';
 
 type Point = {
   x: number;
   y: number;
+  isClicked: boolean;
+}
+type DetecedObject = Point[]
+
+type DetectedObjects = DetecedObject[][]
+
+type ObjectPointData = {
+  objIndex: number,
+  pointIndex: number,
+  point: Point
 }
 
 type FileBlobData = {
   fileName: string
   textBlob?: Blob
   ImageBlob?: Blob
+  imageURL?: string
 }
 
 function App() {
+
   const [timerId, setTimerId] = useState<NodeJS.Timer>()
   const [originCanvas, setOriginCanvas] = useState<HTMLCanvasElement | null>(null)//canvasの中身
-  const [cropedCanvas, setCropedCanvas] = useState<HTMLCanvasElement | null>(null)//canvasの中身
-  const [shrinkRatio, setShrinkRatio] = useState<number>(1)
+  const [detectedObjects, setDetectedObjects] = useState<DetectedObjects>([])//現在の画像の
   const [outputFileBlobs, setOutputFIleBlob] = useState<FileBlobData[]>([])
   const [className, setClassName] = useState<string>("")
   const [loaded, setLoaded] = useState(false)
-  const [clickedTime, setClickedTime] = useState<number>(0)
-  const [currentTime, setCurrentTime] = useState<number>(0)
+  const [objFrameRenderedCount, setObjFrameRenderedCount] = useState<number>(0)
   const [mouseUpTime, setMouseUpTime] = useState<number>(0)
-  const [isClicked, setIsClicked] = useState<boolean>(false)
-  const [clickedPoint, setClickedPoint] = useState<Point>({ x: 0, y: 0 })
-
+  const [clickedPoint, setClickedPoint] = useState<Point>({ x: 0, y: 0, isClicked: false })
+  const [currentClickingObjectPoint, setCurrentClickingObjectPoint] = useState<ObjectPointData>({
+    objIndex: 0, pointIndex: 0, point: {
+      x: 0, y: 0, isClicked: false
+    }
+  })
+  const [apiurl, setApiUrl] = useState<string>("")
   const [imgPaths, setImgPaths] = useState<string[]>([]);
   const [inputFileNames, setInputFileNames] = useState<string[]>([])
   const [currentImgIndex, setCurrentImgIndex] = useState<number>(0)
 
 
-  const originCanvas_width = 640
-  const originCanvas_height = 360
+  const originCanvas_width = 1280
+  const originCanvas_height = 720
+  const startBoxSize = 16
   // console.log(clickedTime, currentTime, isClicked, clickedPoint)
+  //console.log(currentImgIndex, detectedObjects)
 
 
 
   useEffect(() => {
     const origin = document.getElementById("originImage") as HTMLCanvasElement
-    const croped = document.getElementById("cropedImage") as HTMLCanvasElement
     setOriginCanvas(origin)
-    setCropedCanvas(croped)
+    origin.addEventListener('keypress', handleKeyPress)
 
   }, [])
   useEffect(() => {
@@ -57,20 +74,11 @@ function App() {
         const ratioFromWidth: number = img.width / originCanvas_width
         const ratioFromHeight: number = img.height / originCanvas_height
         const ratio: number = Math.max(ratioFromHeight, ratioFromWidth)
-        setShrinkRatio(ratio)
-        if (outputFileBlobs[currentImgIndex].ImageBlob === undefined) {
-          originCanvasContext.drawImage(img, 0, 0, img.width / ratio, img.height / ratio)
-          originCanvas.toBlob(blob => {
-            const newFiles = [...outputFileBlobs]
-            newFiles[currentImgIndex].ImageBlob = blob as Blob
-            setOutputFIleBlob(newFiles)
-          },)
-        }
-        originCanvasContext.fillStyle = "rgb(0,0,0)"
+        originCanvasContext.fillStyle = "rgb(255,255,255)"
         originCanvasContext.fillRect(0, 0, originCanvas_width, originCanvas_height)
 
         originCanvasContext.drawImage(img, 0, 0, img.width / ratio, img.height / ratio)
-        const lineLength = (currentTime - clickedTime) / 16 + 15
+        const lineLength = objFrameRenderedCount + startBoxSize
 
         originCanvasContext.strokeStyle = "linear-gradient(315deg, #85FFBD 0%, #050005 19%, #00ff42 39%, #000000 60%, #15de58 80%, #000000 100%)"
         originCanvasContext.strokeRect(clickedPoint.x - lineLength / 2, clickedPoint.y - lineLength / 2, lineLength, lineLength)
@@ -79,55 +87,60 @@ function App() {
         setLoaded(true)
       }
     }
-  }, [originCanvas, currentImgIndex, imgPaths, clickedPoint, currentTime])
+  }, [originCanvas, currentImgIndex, imgPaths, clickedPoint, objFrameRenderedCount])
 
 
-  useEffect(() => {
-    if (cropedCanvas !== null && isClicked === false) {
-      const cropedCanvasContext = cropedCanvas.getContext("2d") as CanvasRenderingContext2D
-
-      const img = new Image()
-      img.src = imgPaths[currentImgIndex]// 描画する画像など
-      img.onload = () => {
-        cropedCanvasContext.fillStyle = "rgb(0,0,0)"
-        cropedCanvasContext.fillRect(0, 0, 360, 360)
-        const lineLength = (currentTime - clickedTime) / 16 + 15
-        const startX = (clickedPoint.x - lineLength / 2) * shrinkRatio
-        const startY = (clickedPoint.y - lineLength / 2) * shrinkRatio
-        const cuttingWidth = lineLength * shrinkRatio
-        const cuttingHeight = lineLength * shrinkRatio
-        cropedCanvasContext.drawImage(img, startX, startY, cuttingWidth, cuttingHeight, 0, 0, 360, 360)
-
-
-
-        // 更にこれに続いて何か処理をしたい場合
-        setLoaded(true)
-      }
-    }
-    if (isClicked === true) {
-      clearInterval(timerId)
-      const timer = setInterval(update, 50)
-      setTimerId(timer)
-      setCurrentTime(Date.now())
-    }
-  }, [isClicked])
   const update = () => {
-    console.log("update中", isClicked)
-    if (isClicked === false) {
+    console.log("update中", clickedPoint.isClicked, objFrameRenderedCount)
+    if (clickedPoint.isClicked === false) {
       clearInterval(timerId)
     }
-    setCurrentTime(Date.now())
+    setObjFrameRenderedCount(objFrameRenderedCount => objFrameRenderedCount + 3)
   }
 
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement> | any) => {
     if (!e.target.files) return;
-    console.log(e.target.files)
 
     // React.ChangeEvent<HTMLInputElement>よりファイルを取得
     const urls: string[] = [...imgPaths]
     const names: string[] = [...inputFileNames]
+    Promise.all(Array.from(Array(e.target.files.length).keys()).map(async (i: number) => {
+      return detectObjctApi("http://localhost:8000/api/detect/", e.target.files[i])
+    })).then((result: any[][]) => {
+      console.log(result)
+      const newObjs = result.map((objs) => objs.map((obj): Point[] => {
+        return (
+          [{
+            x: obj.x * originCanvas_width,
+            y: obj.y * originCanvas_height,
+            isClicked: false,
+          }, {
+            x: (obj.x + obj.w) * originCanvas_width,
+            y: obj.y * originCanvas_height,
+            isClicked: false,
+          }, {
+            x: obj.x * originCanvas_width,
+            y: (obj.y + obj.h) * originCanvas_height,
+            isClicked: false,
+          }, {
+            x: (obj.x + obj.w) * originCanvas_width,
+            y: (obj.y + obj.h) * originCanvas_height,
+            isClicked: false,
+          }
+          ]
+
+        )
+      }))
+      setDetectedObjects(newObjs)
+    }).catch(() => {
+      const newObjs = new Array(e.target.files.length).fill([])
+      setDetectedObjects(newObjs)
+    })
+
     for (let i = 0; i < e.target.files.length; i++) {
       const name = e.target.files[i].name
+
       console.log(name, inputFileNames.indexOf(name))
       if (inputFileNames.indexOf(name) === -1) {
         urls.push(window.URL.createObjectURL(e.target.files[i]))
@@ -138,82 +151,135 @@ function App() {
     console.log(urls)
     setImgPaths(urls);
     setInputFileNames(names)
-    setOutputFIleBlob(urls.map((val, index) => {
-      const obj: FileBlobData = {
-        fileName: (index + 1).toString()
-      }
-      return obj
-    }))
   }
 
   const deleteImage = (index: number) => {
     let newUrls = [...imgPaths]
     let newInputFileNames = [...inputFileNames]
-    let newOutputFileBlobs = [...outputFileBlobs]
+    let newDetectedObjs = [...detectedObjects]
     newUrls.splice(index, 1)
     newInputFileNames.splice(index, 1)
-    newOutputFileBlobs.splice(index, 1)
+    newDetectedObjs.splice(index, 1)
     setImgPaths(newUrls)
     setInputFileNames(newInputFileNames)
-    setOutputFIleBlob(newOutputFileBlobs)
-
-    if (newUrls.length - 1 < currentImgIndex) {
+    setDetectedObjects(newDetectedObjs)
+    if (newUrls.length - 1 < currentImgIndex && newUrls.length > 0) {
       setCurrentImgIndex(newUrls.length - 1)
     }
   }
   const onMouseDownImage = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    switch (e.button) {
-      case 0:
-
-        if (loaded && Date.now() - mouseUpTime > 150) {
-          console.log(timerId)
-          setClickedPoint({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })
-          setClickedTime(Date.now())
-          setCurrentTime(Date.now())
-          setIsClicked(true)
-        }
+    e.preventDefault()
+    if (loaded && Date.now() - mouseUpTime > 150 && e.button === 0) {
+      console.log(timerId)
+      setClickedPoint({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY, isClicked: true })
+      setObjFrameRenderedCount(objFrameRenderedCount + 1)
+      clearInterval(timerId)
+      const timer = setInterval(update, 50)
+      setTimerId(timer)
 
     }
+
   }
 
   const onMouseMoveImage = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (isClicked) {
-      setClickedPoint({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY })
+    e.preventDefault()
+    if (clickedPoint.isClicked) {
+      setClickedPoint({ x: e.nativeEvent.offsetX, y: e.nativeEvent.offsetY, isClicked: true })
+    }
+    else if (currentClickingObjectPoint.point.isClicked && e.shiftKey) {
+      const newObjs = [...detectedObjects]
+      const { objIndex, pointIndex } = currentClickingObjectPoint
+      newObjs[currentImgIndex][objIndex] = newObjs[currentImgIndex][objIndex].map((point, i) => {
+
+        const newPoint = { ...point }
+        console.log(currentClickingObjectPoint, point, e.nativeEvent.movementX, e.nativeEvent.movementY)
+        const sum = pointIndex + i
+        if (pointIndex == i) {
+          newPoint.x += e.nativeEvent.movementX
+          newPoint.y += e.nativeEvent.movementY
+        }
+        else if (sum == 3) {
+
+        }
+        else if (sum % 2 == 0) {
+          newPoint.x += e.nativeEvent.movementX
+        }
+        else if (sum % 2 == 1) {
+          newPoint.y += e.nativeEvent.movementY
+        }
+        return newPoint
+      })
+      console.log(e, "move")
+      console.log(currentClickingObjectPoint)
+
+      const newClickPoint = { ...currentClickingObjectPoint.point }
+      newClickPoint.x += e.nativeEvent.movementX
+      newClickPoint.y += e.nativeEvent.movementY
+      setDetectedObjects(newObjs)
+      setCurrentClickingObjectPoint({
+        ...currentClickingObjectPoint,
+        point: newClickPoint,
+      })
     }
   }
 
-  const onMouseUpImage = () => {
+  const onMouseUpImage = (e: React.MouseEvent<HTMLCanvasElement>,) => {
+    e.preventDefault()
     clearInterval(timerId)
     setMouseUpTime(Date.now())
-    setIsClicked(false)
 
     //4角補正
+    if (clickedPoint.isClicked) {
+      const lineLength = objFrameRenderedCount + startBoxSize
+      const halfLength = lineLength / 2
 
-    const lineLength = (currentTime - clickedTime) / 16 + 15
-    const halfLength = lineLength / 2
+      const newPoint = { ...clickedPoint }
 
-    const newPoint = { ...clickedPoint }
-    let isChanged = false
+      if (clickedPoint.x + halfLength > originCanvas_width) {
+        newPoint.x = originCanvas_width - halfLength
+      }
+      if (clickedPoint.x - halfLength < 0) {
+        newPoint.x = halfLength
+      }
+      if (clickedPoint.y + halfLength > originCanvas_height) {
+        newPoint.y = originCanvas_height - halfLength
+      }
+      if (clickedPoint.y - halfLength < 0) {
+        newPoint.y = halfLength
+      }
+      let objs = [...detectedObjects]
+      objs[currentImgIndex].push([{
+        x: newPoint.x - halfLength,
+        y: newPoint.y - halfLength,
+        isClicked: false,
+      }, {
+        x: newPoint.x + halfLength,
+        y: newPoint.y - halfLength,
+        isClicked: false,
+      }, {
+        x: newPoint.x - halfLength,
+        y: newPoint.y + halfLength,
+        isClicked: false,
+      }, {
+        x: newPoint.x + halfLength,
+        y: newPoint.y + halfLength,
+        isClicked: false,
+      }
+      ])
+      setDetectedObjects(objs)
+      setObjFrameRenderedCount(0)
+      setClickedPoint({ x: 0, y: 0, isClicked: false })
+    }
+    if (currentClickingObjectPoint.point.isClicked) {
+      setCurrentClickingObjectPoint({
+        ...currentClickingObjectPoint,
+        point: {
+          ...currentClickingObjectPoint.point,
+          isClicked: false
+        }
+      })
+    }
 
-    if (clickedPoint.x + halfLength > originCanvas_width) {
-      newPoint.x = originCanvas_width - halfLength
-      isChanged = true
-    }
-    if (clickedPoint.x - halfLength < 0) {
-      newPoint.x = halfLength
-      isChanged = true
-    }
-    if (clickedPoint.y + halfLength > originCanvas_height) {
-      newPoint.y = originCanvas_height - halfLength
-      isChanged = true
-    }
-    if (clickedPoint.y - halfLength < 0) {
-      newPoint.y = halfLength
-      isChanged = true
-    }
-    if (isChanged) {
-      setClickedPoint(newPoint)
-    }
   }
 
 
@@ -269,19 +335,10 @@ function App() {
     }
 
 
-    if (clickedTime !== 0) {
-      const currentLabel = getCurrentLabelBlob()
-      const index = outputFileBlobs.findIndex((element) => element.fileName === currentLabel.fileName)
-      let newFiles = [...outputFileBlobs]
-      newFiles[index].textBlob = currentLabel.textBlob
-      setOutputFIleBlob(newFiles)
-    }
-    setClickedTime(0)
-    setCurrentTime(0)
-    setIsClicked(false)
-    setClickedPoint({ x: 0, y: 0 })
+    setClickedPoint({ x: 0, y: 0, isClicked: false })
     setCurrentImgIndex(nextIndex)
   }
+
   const onClickSaveData = async () => {
 
     let files: FileBlobData[] = outputFileBlobs
@@ -289,59 +346,123 @@ function App() {
       fileName: "classes",
       textBlob: new Blob([className], { type: "text/utf-8" })
     }
-    if (clickedTime !== 0) {
-      const currentLabel = getCurrentLabelBlob()
-      const index = files.findIndex((element) => element.fileName === currentLabel.fileName)
-      files[index].textBlob = currentLabel.textBlob
-    }
     files.push(classFile)
     await generateZipBlob(files).then((zipBlob) => {
       saveBlob(zipBlob)
     })
   }
 
-  const getCurrentLabelBlob = (): FileBlobData => {
-    let scaledMidX = (clickedPoint.x / originCanvas_width)
-    let scaledMidY = (clickedPoint.y / originCanvas_height)
-    const lineLength = (currentTime - clickedTime) / 16 + 15
-    const scaledWidth = (lineLength / originCanvas_width)
-    const scaledHeight = (lineLength / originCanvas_height)
-
-    //角の補正
-    if (scaledMidX - scaledWidth < 0) {
-      scaledMidX = scaledWidth / 2
+  const getCurrentLabelBlob = (obj: DetecedObject): FileBlobData => {
+    const scaledObjData = {
+      centerX: (obj[3].x + obj[0].x) / 2 / originCanvas_width,
+      centerY: (obj[3].y + obj[0].y) / 2 / originCanvas_height,
+      width: (obj[3].x - obj[0].x) / originCanvas_width,
+      height: (obj[3].y - obj[0].y) / originCanvas_height,
     }
-    if (scaledMidX + scaledWidth > 1) {
-      scaledMidX = 1 - scaledWidth / 2
-    }
-    if (scaledMidY - scaledHeight < 0) {
-      scaledMidY = scaledHeight / 2
-    }
-    if (scaledMidY + scaledHeight > 1) {
-      scaledMidY = 1 - scaledHeight / 2
-    }
-    const txtData: string = `0 ${scaledMidX.toFixed(6)} ${scaledMidY.toFixed(6)} ${scaledWidth.toFixed(6)} ${scaledHeight.toFixed(6)} `
+    const txtData: string = `0 ${scaledObjData.centerX.toFixed(6)} ${scaledObjData.centerY.toFixed(6)} ${scaledObjData.width.toFixed(6)} ${scaledObjData.height.toFixed(6)} `
     const txtBlob: FileBlobData = {
-      fileName: (currentImgIndex + 1).toString(),
+      fileName: inputFileNames[currentImgIndex],
       textBlob: new Blob([txtData], { type: "text/utf-8" })
     }
     return txtBlob
   }
+  const handleKeyPress = (e: KeyboardEvent) => {
+    e.preventDefault()
+    if (e.shiftKey) {
+      if (e.key === 'a' || e.key === 'A') {
+        changeImage(-1)
+      }
+      if (e.key === 'd' || e.key === 'D') {
+        changeImage(1)
+      }
+    }
+
+  }
+  const onLeftClickFrame = (e: React.MouseEvent<HTMLDivElement>, objIndex: number, obj: DetecedObject) => {
+    e.preventDefault()
+    if (e.shiftKey === false) {
+      const currentFrameFileLabel = getCurrentLabelBlob(obj)
+      const newFiles = [...outputFileBlobs]
+      originCanvas?.toBlob(blob => {
+        currentFrameFileLabel.ImageBlob = blob as Blob
+        currentFrameFileLabel.imageURL = window.URL.createObjectURL(blob as Blob)
+        newFiles.push(currentFrameFileLabel)
+        setOutputFIleBlob(newFiles)
+      })
+      changeImage(1)
+    }
+
+  }
+
+  const onRightClickFrame = (e: React.MouseEvent<HTMLDivElement>, objIndex: number) => {
+    e.preventDefault()
+    const objs = [...detectedObjects]
+    objs[currentImgIndex].splice(objIndex, 1)
+    setDetectedObjects(objs)
+
+  }
+  const onClickObjectFrame = (e: React.MouseEvent<HTMLDivElement>, objIndex: number, pointIndex: number, point: Point) => {
+    e.preventDefault()
+    const newPoint = point
+    newPoint.isClicked = true
+    setCurrentClickingObjectPoint({
+      objIndex: objIndex,
+      pointIndex: pointIndex,
+      point: newPoint
+    })
+  }
+
+  // const onDragObjectFrame = (e: React.MouseEvent<HTMLDivElement>, objIndex: number, pointIndex: number, targetPoint: Point) => {
+  //   e.preventDefault()
+  //   const newObjs = [...detectedObjects]
+  //   if (currentClickingObjectPoint.point.isClicked === true) {
+  //     console.log(e, "drag")
+  //     newObjs[currentImgIndex] = newObjs[currentImgIndex].map(obj => obj.map((point) => {
+
+  //       const newPoint = { ...point }
+  //       if (targetPoint.x === point.x) {
+  //         newPoint.x += e.nativeEvent.movementX
+  //       }
+  //       if (targetPoint.y === point.y) {
+  //         newPoint.y += e.nativeEvent.movementY
+  //       }
+  //       return newPoint
+  //     }))
+
+  //   }
+  //   setDetectedObjects(newObjs)
+  // }
+
   return (
     <div className="App">
       <div>
-        画像アノテーションツール
+        画像アノテーションツール使い
       </div>
-      <CustomImageInput multiple onChange={onFileChange} />
-      <button onClick={() => {
-        deleteImage(currentImgIndex)
-      }}>
-        選択中の画像を削除
-      </button>
+      <div>
+        1,接続先apiURLを入力
+      </div>
+      <div>
+        2,画像を投稿
+      </div>
+      <div>
+        3,推定された矩形を選択または矩形作成
+      </div>
+      <div>
+        接続先apiURL
+      </div>
+      <input type={"text"} onChange={(e) => {
+        setApiUrl(e.target.value)
+      }} />
+      {apiurl.match(/https\/.*/) !== null && <><CustomImageInput multiple onChange={onFileChange} />
+        <button onClick={() => {
+          deleteImage(currentImgIndex)
+        }}>
+          選択中の画像を削除
+        </button></>}
       {imgPaths.length > 0 && <div>
         {`${currentImgIndex + 1}/${imgPaths.length}`}
       </div>}
-      <div>
+      <div style={{ position: "relative" }} onContextMenu={(e) => e.preventDefault()}  >
         <canvas className={"originImage"}
           onMouseDown={onMouseDownImage}
           onMouseMove={onMouseMoveImage}
@@ -351,19 +472,53 @@ function App() {
           height={originCanvas_height}
           id="originImage"
           draggable={false}
-        />
+        >
+
+        </canvas>
+        {detectedObjects.length > 0 &&
+          detectedObjects[currentImgIndex].map((obj, objIndex) => {
+            return <div style={{
+              position: "absolute",
+              left: obj[0].x,
+              top: obj[0].y,
+              width: obj[3].x - obj[0].x,
+              height: obj[3].y - obj[0].y,
+              border: "#3FF100 solid 2px"
+
+            }} className='objframe' key={`obj-frame${objIndex}`}
+              onClick={(e) => onLeftClickFrame(e, objIndex, obj)} onContextMenu={(e) => onRightClickFrame(e, objIndex)}>
+              {
+                obj.map((point: Point, pointIndex: number) => {
+                  return (<div style={{
+                    position: "absolute",
+                    left: pointIndex % 2 === 0 ? -8 : undefined,
+                    right: pointIndex % 2 === 1 ? -8 : undefined,
+                    top: pointIndex <= 1 ? -8 : undefined,
+                    bottom: pointIndex >= 2 ? -8 : undefined,
+                    width: "16px",
+                    height: "16px",
+                    border: "black dashed 1px",
+                    borderRadius: "8px",
+                  }} onMouseDown={(e) => onClickObjectFrame(e, objIndex, pointIndex, point)}
+                    //onMouseMove={(e) => onDragObjectFrame(e, objIndex, pointIndex, point)}
+                    //onMouseUp={() => onMouseUpObjectFrame(objIndex, pointIndex)}
+                    key={`point-obj${objIndex}-${pointIndex}`}
+                  >
+                  </div>)
+                })
+              }
+            </div>
+          })
+        }
       </div>
 
-      <div>
-        <canvas className={"cropedImage"} width="360" height="360" id="cropedImage" />
-      </div>
       <button onClick={() => changeImage(-1)}>
         前の画像
       </button>
       <button onClick={() => changeImage(1)}>
         次の画像
       </button>
-      <button onClick={onClickSaveData} disabled={outputFileBlobs.length === 0}>
+      <button onClick={onClickSaveData} disabled={outputFileBlobs.length === 0 || className.length === 0}>
         保存する
       </button>
       <div>
@@ -373,6 +528,13 @@ function App() {
         setClassName(e.target.value)
       }}>
       </input>
+      <div>選択済みのラベル{outputFileBlobs.filter((obj) => obj.textBlob != undefined).length}</div>
+      <div>
+        画像貼るところ
+
+      </div>
+
+
     </div >
   );
 }

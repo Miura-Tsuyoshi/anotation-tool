@@ -3,7 +3,6 @@ import React, { useRef } from "react"
 type InputProps = {
     multiple: boolean
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
-
 }
 
 const CustomImageInput: React.FC<InputProps> = (props) => {
