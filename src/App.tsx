@@ -453,7 +453,7 @@ function App() {
       <input type={"text"} onChange={(e) => {
         setApiUrl(e.target.value)
       }} />
-      {apiurl.match(/https\/.*/) !== null && <><CustomImageInput multiple onChange={onFileChange} />
+      {apiurl.match(/https:\/\/.*/) !== null && <><CustomImageInput multiple onChange={onFileChange} />
         <button onClick={() => {
           deleteImage(currentImgIndex)
         }}>
