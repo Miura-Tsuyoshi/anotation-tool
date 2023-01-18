@@ -56,7 +56,7 @@ model = torch.hub.load("ultralytics/yolov5", "yolov5s", pretrained=True)
 app = FastAPI()
 
 origins = [
-    "http://localhost:3000",
+    "http://localhost:3000", "https://miura-tsuyoshi.github.io"
 ]
 app.add_middleware(
     CORSMiddleware,

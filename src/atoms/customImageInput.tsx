@@ -16,7 +16,7 @@ const CustomImageInput: React.FC<InputProps> = (props) => {
                 }
             }
         }}>
-            画像をを追加
+            画像を追加
         </button>
     </>
 }

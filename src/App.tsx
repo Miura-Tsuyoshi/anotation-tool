@@ -49,6 +49,9 @@ function App() {
   const [imgPaths, setImgPaths] = useState<string[]>([]);
   const [inputFileNames, setInputFileNames] = useState<string[]>([])
   const [currentImgIndex, setCurrentImgIndex] = useState<number>(0)
+  const [postTime, setPostTime] = useState<number>(0)
+  const [part1Time, setPart1Time] = useState<number>(0)
+  const [par2Time, setPart2Time] = useState<number>(0)
 
 
   const originCanvas_width = 1280
@@ -105,9 +108,11 @@ function App() {
     // React.ChangeEvent<HTMLInputElement>よりファイルを取得
     const urls: string[] = [...imgPaths]
     const names: string[] = [...inputFileNames]
+    setPostTime(Date.now())
     Promise.all(Array.from(Array(e.target.files.length).keys()).map(async (i: number) => {
-      return detectObjctApi(apiurl, e.target.files[i])
+      return detectObjctApi("http://localhost:8000", e.target.files[i])
     })).then((result: any[][]) => {
+      setPart1Time(Date.now())
       console.log(result)
       const newObjs = result.map((objs) => objs.map((obj): Point[] => {
         return (
@@ -349,6 +354,8 @@ function App() {
     files.push(classFile)
     await generateZipBlob(files).then((zipBlob) => {
       saveBlob(zipBlob)
+    }).then(() => {
+      setPart2Time(Date.now())
     })
   }
 
@@ -436,29 +443,28 @@ function App() {
   return (
     <div className="App">
       <div>
-        画像アノテーションツール使い
+        画像アノテーションツール
+        <div>
+          {`${part1Time},${par2Time},`}
+          {`${Date.now()},${postTime},`}
+          {`${part1Time ** (1 / 2)},${par2Time ** (1 / 2)}`}
+        </div>
       </div>
       <div>
-        1,接続先apiURLを入力
+        1,画像を投稿
       </div>
       <div>
-        2,画像を投稿
+        2,推定された矩形を選択または矩形作成
       </div>
       <div>
-        3,推定された矩形を選択または矩形作成
+        3,クラス名を入力する
       </div>
-      <div>
-        接続先apiURL
-      </div>
-      <input type={"text"} onChange={(e) => {
-        setApiUrl(e.target.value)
-      }} />
-      {apiurl.match(/https:\/\/.*/) !== null && <><CustomImageInput multiple onChange={onFileChange} />
-        <button onClick={() => {
-          deleteImage(currentImgIndex)
-        }}>
-          選択中の画像を削除
-        </button></>}
+      <CustomImageInput multiple onChange={onFileChange} />
+      <button onClick={() => {
+        deleteImage(currentImgIndex)
+      }}>
+        選択中の画像を削除
+      </button>
       {imgPaths.length > 0 && <div>
         {`${currentImgIndex + 1}/${imgPaths.length}`}
       </div>}
@@ -529,10 +535,7 @@ function App() {
       }}>
       </input>
       <div>選択済みのラベル{outputFileBlobs.filter((obj) => obj.textBlob != undefined).length}</div>
-      <div>
-        画像貼るところ
 
-      </div>
 
 
     </div >
