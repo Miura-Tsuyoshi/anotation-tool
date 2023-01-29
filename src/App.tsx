@@ -110,7 +110,7 @@ function App() {
     const names: string[] = [...inputFileNames]
     setPostTime(Date.now())
     Promise.all(Array.from(Array(e.target.files.length).keys()).map(async (i: number) => {
-      return detectObjctApi("https://8812-125-205-139-13.jp.ngrok.io", e.target.files[i])
+      return detectObjctApi("https://a6c6-58-94-113-242.jp.ngrok.io", e.target.files[i])
     })).then((result: any[][]) => {
       setPart1Time(Date.now())
       console.log(result)
